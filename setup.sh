@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+# 如果用 sh 运行，自动切换到 bash
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 # ============================================================
 # OpenMOSS 一键安装 / 一键更新脚本
 #
@@ -18,19 +23,19 @@ RED='\033[0;31m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info() { echo -e "${GREEN}[OpenMOSS]${NC} $1"; }
-warn() { echo -e "${YELLOW}[OpenMOSS]${NC} $1"; }
-error() { echo -e "${RED}[OpenMOSS]${NC} $1" >&2; }
+info() { printf "${GREEN}[OpenMOSS]${NC} %s\n" "$1"; }
+warn() { printf "${YELLOW}[OpenMOSS]${NC} %s\n" "$1"; }
+error() { printf "${RED}[OpenMOSS]${NC} %s\n" "$1" >&2; }
 
 echo ""
-echo -e "${BOLD}  ╔═══════════════════════════════════════╗${NC}"
-echo -e "${BOLD}  ║     🌿 OpenMOSS 一键安装 / 更新       ║${NC}"
-echo -e "${BOLD}  ║     AI 公司操作系统                    ║${NC}"
-echo -e "${BOLD}  ╚═══════════════════════════════════════╝${NC}"
+printf "${BOLD}  ╔═══════════════════════════════════════╗${NC}\n"
+printf "${BOLD}  ║     🌿 OpenMOSS 一键安装 / 更新       ║${NC}\n"
+printf "${BOLD}  ║     AI 公司操作系统                    ║${NC}\n"
+printf "${BOLD}  ╚═══════════════════════════════════════╝${NC}\n"
 echo ""
 
 # ---------- 检查 curl ----------
-if ! command -v curl &>/dev/null; then
+if ! command -v curl >/dev/null 2>&1; then
     error "需要 curl，请先安装"
     echo "  Ubuntu: sudo apt install curl"
     echo "  CentOS: sudo yum install curl"

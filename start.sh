@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+# 如果用 sh 运行，自动切换到 bash
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 # ============================================================
 # OpenMOSS 一键启动脚本
 # 自动完成：检查环境 → 创建 venv → 安装依赖 → 启动服务
@@ -18,12 +23,12 @@ RED='\033[0;31m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${GREEN}[OpenMOSS]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[OpenMOSS]${NC} $1"; }
-error() { echo -e "${RED}[OpenMOSS]${NC} $1" >&2; }
+info()  { printf "${GREEN}[OpenMOSS]${NC} %s\n" "$1"; }
+warn()  { printf "${YELLOW}[OpenMOSS]${NC} %s\n" "$1"; }
+error() { printf "${RED}[OpenMOSS]${NC} %s\n" "$1" >&2; }
 
 echo ""
-echo -e "${BOLD}  🌿 OpenMOSS — AI 公司操作系统${NC}"
+printf "${BOLD}  🌿 OpenMOSS — AI 公司操作系统${NC}\n"
 echo ""
 
 # ---------- 检查是否已在运行 ----------
@@ -42,7 +47,7 @@ fi
 # ============================================================
 find_python() {
     for cmd in python3.13 python3.12 python3.11 python3.10 python3 python; do
-        if command -v "$cmd" &>/dev/null; then
+        if command -v "$cmd" >/dev/null 2>&1; then
             local ver
             ver=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null) || continue
             local major minor
@@ -110,9 +115,9 @@ source "$VENV_DIR/bin/activate"
 # Step 4: 安装/更新依赖（用 hash 跳过重复安装）
 # ============================================================
 compute_hash() {
-    if command -v md5sum &>/dev/null; then
+    if command -v md5sum >/dev/null 2>&1; then
         md5sum "$1" | cut -d' ' -f1
-    elif command -v md5 &>/dev/null; then
+    elif command -v md5 >/dev/null 2>&1; then
         md5 -q "$1"
     else
         cksum "$1" | cut -d' ' -f1
@@ -172,11 +177,26 @@ PYTHONUNBUFFERED=1 nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app \
     --host 0.0.0.0 --port "$PORT" \
     > "$LOG_DIR/server.log" 2>&1 &
 
-echo $! > "$PID_FILE"
+SERVER_PID=$!
+echo $SERVER_PID > "$PID_FILE"
 
 # ---------- 等待服务就绪 ----------
 printf "  等待服务启动"
 for i in $(seq 1 30); do
+    # 先检查进程是否还活着
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo ""
+        error "❌ 服务进程已退出"
+        echo ""
+        echo "  最近日志："
+        tail -20 "$LOG_DIR/server.log" 2>/dev/null || true
+        echo ""
+        echo "  完整日志: $LOG_DIR/server.log"
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+
+    # 检查 HTTP 是否就绪
     if curl -sf "http://localhost:$PORT/api/health" > /dev/null 2>&1; then
         echo ""
         echo ""
@@ -196,11 +216,26 @@ for i in $(seq 1 30); do
 done
 
 echo ""
-error "❌ 启动超时（30 秒内未就绪）"
+warn "⏱ 服务仍在启动中（已等待 30 秒）"
 echo ""
-echo "  请检查日志: tail -f $LOG_DIR/server.log"
-echo "  常见原因："
-echo "  - 端口 $PORT 被占用（尝试: OPENMOSS_PORT=6566 ./start.sh）"
-echo "  - Python 依赖版本冲突"
-echo ""
-exit 1
+
+# 进程还活着但接口没就绪，可能只是启动慢
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "  服务进程正在运行 (PID: $SERVER_PID)，可能需要更多时间"
+    echo "  请稍后访问: http://localhost:$PORT"
+    echo ""
+    echo "  查看实时日志: tail -f $LOG_DIR/server.log"
+    echo "  🛑 停止服务:   ./stop.sh"
+else
+    error "❌ 服务进程已退出"
+    echo ""
+    echo "  最近日志："
+    tail -20 "$LOG_DIR/server.log" 2>/dev/null || true
+    echo ""
+    echo "  常见原因："
+    echo "  - 端口 $PORT 被占用（尝试: OPENMOSS_PORT=6566 ./start.sh）"
+    echo "  - Python 依赖版本冲突"
+    rm -f "$PID_FILE"
+    exit 1
+fi
+
